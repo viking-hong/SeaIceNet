@@ -1,7 +1,7 @@
 # Data
 Due to data confidentiality issues, it will not be disclosed for the time being. 
 
-Training weights can be contacted at viking_hazard@163.com. 
+Since the training weight is over 100M, please contact viking_hazard@163.com if you need it.
 
 # Train
 ```bash

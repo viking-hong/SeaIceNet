@@ -14,7 +14,9 @@ python run.py
 ```
 
 # Cited
-If you find it helpful, you can cite the following paper.
+If you find it helpful, you can cite the following papers.
+
+[Paper1](https://ieeexplore.ieee.org/document/10746542): "SeaIceNet: Sea Ice Recognition via Global-Local Transformer in Optical Remote Sensing Images," IEEE Transactions on Geoscience and Remote Sensing 
 
 ```bash
 @ARTICLE{10746542,

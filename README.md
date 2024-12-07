@@ -28,5 +28,20 @@ If you find it helpful, you can cite the following papers.
   number={},
   pages={1-16},
   keywords={Sea ice;Ice;Remote sensing;Optical sensors;Optical imaging;Integrated optics;Image segmentation;Feature extraction;Data mining;Accuracy;Climate change;Deep learning;sea ice recognition;semantic segmentation;Transformer model},
-  doi={10.1109/TGRS.2024.3493121}}'
+  doi={10.1109/TGRS.2024.3493121}}
+```
+
+[Paper2](https://ieeexplore.ieee.org/document/10746542): "Global-Local Detail Guided Transformer for Sea Ice Recognition in Optical Remote Sensing Images," IGARSS 2024 - 2024 IEEE International Geoscience and Remote Sensing Symposium
+
+```bash
+@INPROCEEDINGS{10642141,
+  author={Huang, Zhanchao and Hong, Wenjun and Su, Hua},
+  booktitle={IGARSS 2024 - 2024 IEEE International Geoscience and Remote Sensing Symposium}, 
+  title={Global-Local Detail Guided Transformer for Sea Ice Recognition in Optical Remote Sensing Images}, 
+  year={2024},
+  volume={},
+  number={},
+  pages={1768-1772},
+  keywords={Integrated optics;Image edge detection;Feature extraction;Transformers;Optical imaging;Decoding;Optical sensors;sea ice recognition;image segmentation;deep learning;Transformer model},
+  doi={10.1109/IGARSS53475.2024.10642141}}
 

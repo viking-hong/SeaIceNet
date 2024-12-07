@@ -3,6 +3,16 @@ Due to data confidentiality issues, it will not be disclosed for the time being.
 
 Training weights can be contacted at viking_hazard@163.com. 
 
+# Train
+```bash
+python train_supervision.py
+```
+
+# Visual
+```bash
+python run.py
+```
+
 # Cited
 If you find it helpful, you can cite the following paper.
 

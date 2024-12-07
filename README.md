@@ -1,6 +1,6 @@
 # About me
 
-This is the first work I completed. There are still a lot of shortcomings in code writing, model design, experiment design and paper writing. I hope you can give me more advice.
+This is the first work I completed. There are still a lot of shortcomings in code writing, model design, experiment design and paper writing. If possible, I hope you can give me more advice.
 
 # Data
 Due to data confidentiality issues, it will not be disclosed for the time being. Since the weight size of this work is more than 100M, please contact viking_hazard@163.com if you need it.

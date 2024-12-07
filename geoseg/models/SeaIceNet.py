@@ -14,45 +14,19 @@ from geoseg.utils.dca_utils import *
 
 os.environ['CURL_CA_BUNDLE'] = ''
 
-'''
-GaborCNN
-'''
-
-
-class SELayer(nn.Module):
-    def __init__(self, channel, reduction=4):
-        super(SELayer, self).__init__()
-        self.avg_pool = nn.AdaptiveAvgPool2d(1)
-        self.fc1 = nn.Sequential(
-            nn.Conv2d(channel, channel // reduction, 1, bias=False),
-            nn.ReLU(),
-            nn.Conv2d(channel // reduction, channel, 1, bias=False),
-            nn.Sigmoid()
-        )
-
-    def forward(self, x):
-        y = self.avg_pool(x)
-        y_out = self.fc1(y)
-        return x * y_out
-
 
 class GaborConv(nn.Module):
     def __init__(self, kernel_size, in_channels, channel1, eps=1e-8):
         super(GaborConv, self).__init__()
-        # 生成滤波器所需的参数
         self.sigma1, self.theta1, self.Lambda1, self.psi1, self.gamma1, self.bias1 = self.generate_parameters(
             channel1 // 2, in_channels)
         self.sigma2, self.theta2, self.Lambda2, self.psi2, self.gamma2, self.bias2 = self.generate_parameters(
             channel1 // 2, in_channels)
-        # 生成实部和虚部的gabor滤波器 as a tensor of shape in_channels * channel1//2 * kernel_size * kernel_size
         self.filter_cos = self.whole_filter(in_channels, channel1 // 2, kernel_size, self.sigma1, self.theta1,
                                             self.Lambda1, self.psi1, self.gamma1, True).cuda()
         self.filter_sin = self.whole_filter(in_channels, channel1 // 2, kernel_size, self.sigma1, self.theta1,
                                             self.Lambda1, self.psi1, self.gamma1, False).cuda()
-        self.se = SELayer(channel1)
-        # the second layer of the network is a conventional CNN layer
         self.conv = nn.Conv2d(64, 64, 3, 2)
-        # last two layers of the network are fully connected
         self.conv1 = nn.Conv2d(64, 64, kernel_size=3, stride=1, padding=1)
         self.conv2 = nn.Conv2d(64, 64, kernel_size=1, stride=1)
 
@@ -61,7 +35,6 @@ class GaborConv(nn.Module):
         self.post_conv = ConvBNReLU(in_channels, in_channels, kernel_size=3)
 
     def forward(self, x):
-        # 分别用实部和虚部的滤波器对x进行卷积，然后将结果进行拼接
         x_cos = F.conv2d(x, self.filter_cos, bias=self.bias1)  # 4 32 23 23
         x_sin = F.conv2d(x, self.filter_sin, bias=self.bias2)  # 4 32 23 23
         x_comb = torch.cat((x_cos, x_sin), 1)  # 4 64 23 23
@@ -71,7 +44,6 @@ class GaborConv(nn.Module):
         x_comb = fuse_weights[0] * fft_h(x_comb) + fuse_weights[1] * x_comb
         x_comb = self.post_conv(x_comb)
 
-        # x_comb = self.se(x_comb)
         x_size = x.size()[2]
 
         x_comb = F.max_pool2d(x_comb, 2, 1)
@@ -79,10 +51,10 @@ class GaborConv(nn.Module):
         x_comb = F.max_pool2d(x_comb, 2, 2)
 
         x_comb = F.interpolate(x_comb, size=(x_size, x_size), mode='bilinear', align_corners=False)
-        ####conv 3 3
+
         x_comb = self.conv1(x_comb)
         x_comb = F.relu(x_comb)
-        ####conv 11
+
         x_comb = self.conv2(x_comb)
 
         return F.log_softmax(x_comb, dim=1)
@@ -97,46 +69,30 @@ class GaborConv(nn.Module):
         return sigma, theta, Lambda, psi, gamma, bias
 
     def one_filter(self, in_channels, kernel_size, sigma, theta, Lambda, psi, gamma, cos):
-        # generate Gabor filters as a tensor of shape in_channels * kernel_size * kernel_size
         result = torch.zeros(in_channels, kernel_size, kernel_size)
-        # 对每个输入通道生成一个 Gabor 滤波器
-        # 然后将这些滤波器拼接成一个形状为 (in_channels, kernel_size, kernel_size) 的张量
-        # 并将其作为 nn.Parameter 返回
         for i in range(in_channels):
             result[i] = self.gabor_fn(sigma[i], theta[i], Lambda[i], psi[i], gamma[i], kernel_size, cos)
         return nn.Parameter(result)
 
     def whole_filter(self, in_channels, out_channels, kernel_size, sigma_column, theta_column, Lambda_column,
                      psi_column, gamma_column, cos):
-        # generate Gabor filters as a tensor of shape out_channels * in_channels * kernel_size * kernel_size
         result = torch.zeros(out_channels, in_channels, kernel_size,
-                             kernel_size)  # \text{out\_channels} , \frac{\text{in\_channels}}{\text{groups}} , kH , kW
-        # 对每个输出通道生成一组 Gabor 滤波器
-        # 然后将这些滤波器拼接成一个形状为 (out_channels, in_channels, kernel_size, kernel_size) 的张量
-        # 并将其作为 nn.Parameter 返回
+                             kernel_size)
         for i in range(out_channels):
             result[i] = self.one_filter(in_channels, kernel_size, sigma_column[i], theta_column[i], Lambda_column[i],
                                         psi_column[i], gamma_column[i], cos)
         return nn.Parameter(result)
 
     def gabor_fn(self, sigma, theta, Lambda, psi, gamma, kernel_size, cos):
-        # generate a single Gabor filter, modified https://en.wikipedia.org/wiki/Gabor_filter#Example_implementations
-        # 设置 Gabor 滤波器的 x 方向标准差为参数 sigma
         sigma_x = sigma
-        # sigma_y = float(sigma) / gamma
-        # 根据参数 gamma 计算 Gabor 滤波器的 y 方向标准差
         sigma_y = sigma / gamma
 
-        # Bounding box 设置网格的边界
         half_size = (kernel_size - 1) // 2
         ymin, xmin = -half_size, -half_size
         ymax, xmax = half_size, half_size
         (y, x) = np.meshgrid(np.arange(ymin, ymax + 1), np.arange(xmin, xmax + 1))
-        # 将 y 和 x 转换为 PyTorch 的浮点张量
         y = torch.FloatTensor(y)
         x = torch.FloatTensor(x)
-        ##############
-        # Rotation 根据参数 theta 对网格进行旋转
         x_theta = x * torch.cos(theta) + y * torch.sin(theta)
         y_theta = -x * torch.sin(theta) + y * torch.cos(theta)
 
@@ -147,17 +103,13 @@ class GaborConv(nn.Module):
             gb = torch.exp(-.5 * (x_theta ** 2 / sigma_x ** 2 + y_theta ** 2 / sigma_y ** 2)) * torch.sin(
                 2 * np.pi / Lambda * x_theta + psi)
 
-        ###########
         return gb
 
 
 def fft_h(x):
     img_fft = torch.fft.fft2(x)
-    # 中心化频谱
     img_fft_shifted = torch.fft.fftshift(img_fft)
-    # 提取幅度谱
     magnitude_spectrum = torch.abs(img_fft_shifted)
-    # 构造高通滤波器
     _, _, rows, cols = x.shape
     center_row, center_col = rows // 2, cols // 2
     mask = torch.ones((rows, cols))
@@ -166,21 +118,13 @@ def fft_h(x):
             distance = np.sqrt((i - center_row) ** 2 + (j - center_col) ** 2)
             if distance <= 40:
                 mask[i, j] = 0
-    # 高通滤波
     filtered_spectrum = magnitude_spectrum * mask.cuda()
-    # 逆变换
     filtered_img_fft_shifted = img_fft_shifted * filtered_spectrum
     filtered_img_fft = torch.fft.ifftshift(filtered_img_fft_shifted)
     filtered_img = torch.fft.ifft2(filtered_img_fft)
     filtered_image = torch.abs(filtered_img)
 
     return filtered_image
-
-
-'''
-GaborCNN
-'''
-
 
 class ConvBNReLU(nn.Sequential):
     def __init__(self, in_channels, out_channels, kernel_size=3, dilation=1, stride=1, groups=1,
@@ -264,20 +208,7 @@ class Mlp(nn.Module):
         x = self.drop(x)
         return x
 
-    ###############################################################
-    '''
-    新模块开始
-    新模块开始
-    新模块开始
-    '''
-
-
 from pytorch_wavelets import DWT2D, IDWT2D
-
-'''
-这部分是信号重构的部分
-'''
-
 
 class ConvGuidedFilter(nn.Module):
     def __init__(self, dim=256, radius=1, norm=nn.BatchNorm2d):
@@ -287,46 +218,25 @@ class ConvGuidedFilter(nn.Module):
         self.conv_a = nn.Sequential(nn.Conv2d(2 * dim, dim, kernel_size=1, bias=False),
                                     norm(dim),
                                     nn.ReLU(inplace=True),
-                                    # nn.LeakyReLU(inplace=True)
-                                    # nn.Conv2d(dim, dim, kernel_size=1, bias=False),
-                                    # norm(32),
-                                    # nn.ReLU(inplace=True),
-                                    # nn.Conv2d(dim, dim, kernel_size=1, bias=False)
                                     )
         self.box_filter.weight.data[...] = 1.0
 
-    def forward(self, x_lr, y_lr, x_hr):  ##########y_lr 自注意力输入，x_lr引导图->残差的小波细节, x_hr残差
+    def forward(self, x_lr, y_lr, x_hr):
         _, _, h_lrx, w_lrx = x_lr.size()
         _, _, h_hrx, w_hrx = x_hr.size()
 
         N = self.box_filter(x_lr.data.new().resize_((1, self.dim, h_lrx, w_lrx)).fill_(1.0))
-        ## mean_x
-        mean_x = self.box_filter(x_lr) / N  # G        G_ave = self.ave(G)   # 2
-        ## mean_y
-        mean_y = self.box_filter(y_lr) / N  # F        F_ave = self.ave(F)   # 1
-        ## cov_xy
-        cov_xy = self.box_filter(x_lr * y_lr) / N - mean_x * mean_y  # GF_var = GF_ave - F_ave*G_ave           # 6
-        ## var_x
-        var_x = self.box_filter(x_lr * x_lr) / N - mean_x * mean_x  # G_var = GG_ave - G_ave*G_ave + self.eps # 5
+        mean_x = self.box_filter(x_lr) / N
+        mean_y = self.box_filter(y_lr) / N
+        cov_xy = self.box_filter(x_lr * y_lr) / N - mean_x * mean_y
+        var_x = self.box_filter(x_lr * x_lr) / N - mean_x * mean_x
+        A = self.conv_a(torch.cat([cov_xy, var_x], dim=1))
+        b = mean_y - A * mean_x
 
-        ## A
-        A = self.conv_a(torch.cat([cov_xy, var_x], dim=1))  # GF_var/G_var.expand_as(GF_var)   # 7
-        ## b
-        b = mean_y - A * mean_x  # F_ave - a*G_ave
-
-        '''
-        ##############################
-        '''
-        ## mean_A; mean_b
         mean_A = F.interpolate(A, (h_hrx, w_hrx), mode='bilinear', align_corners=True)
-        #       a = self.ave(a)
         mean_b = F.interpolate(b, (h_hrx, w_hrx), mode='bilinear', align_corners=True)
-        #       b = self.ave(b)
-        '''
-        ################################
-        '''
 
-        return mean_A * x_hr + mean_b  # out = a * G.expand_as(a) + b   # 10
+        return mean_A * x_hr + mean_b
 
 
 class GlobalLocalAttention(nn.Module):
@@ -362,21 +272,19 @@ class GlobalLocalAttention(nn.Module):
         self.gb = GaborConv(kernel_size=3, in_channels=dim, channel1=dim)
 
         if self.relative_pos_embedding:
-            # define a parameter table of relative position bias
             self.relative_position_bias_table = nn.Parameter(
-                torch.zeros((2 * window_size - 1) * (2 * window_size - 1), num_heads))  # 2*Wh-1 * 2*Ww-1, nH
+                torch.zeros((2 * window_size - 1) * (2 * window_size - 1), num_heads))
 
-            # get pair-wise relative position index for each token inside the window
             coords_h = torch.arange(self.ws)
             coords_w = torch.arange(self.ws)
-            coords = torch.stack(torch.meshgrid([coords_h, coords_w]))  # 2, Wh, Ww
-            coords_flatten = torch.flatten(coords, 1)  # 2, Wh*Ww
-            relative_coords = coords_flatten[:, :, None] - coords_flatten[:, None, :]  # 2, Wh*Ww, Wh*Ww
-            relative_coords = relative_coords.permute(1, 2, 0).contiguous()  # Wh*Ww, Wh*Ww, 2
-            relative_coords[:, :, 0] += self.ws - 1  # shift to start from 0
+            coords = torch.stack(torch.meshgrid([coords_h, coords_w]))
+            coords_flatten = torch.flatten(coords, 1)
+            relative_coords = coords_flatten[:, :, None] - coords_flatten[:, None, :]
+            relative_coords = relative_coords.permute(1, 2, 0).contiguous()
+            relative_coords[:, :, 0] += self.ws - 1
             relative_coords[:, :, 1] += self.ws - 1
             relative_coords[:, :, 0] *= 2 * self.ws - 1
-            relative_position_index = relative_coords.sum(-1)  # Wh*Ww, Wh*Ww
+            relative_position_index = relative_coords.sum(-1)
             self.register_buffer("relative_position_index", relative_position_index)
 
             trunc_normal_(self.relative_position_bias_table, std=.02)
@@ -390,21 +298,15 @@ class GlobalLocalAttention(nn.Module):
         return x
 
     def pad_out(self, x):
-        x = F.pad(x, pad=(0, 1, 0, 1), mode='constant')  # reflect
+        x = F.pad(x, pad=(0, 1, 0, 1), mode='constant')
         return x
 
     def forward(self, x):
         B, C, H, W = x.shape
 
-        '''
-        局部分支
-        '''
-        local = self.local2(x) + self.local1(x)  # 4 64 25 25
+        local = self.local2(x) + self.local1(x)
         local = self.gb(local)
 
-        '''
-        全局分支
-        '''
         x = self.pad(x, self.ws)
         B, C, Hp, Wp = x.shape
         qkv = self.qkv(x)
@@ -413,18 +315,16 @@ class GlobalLocalAttention(nn.Module):
                             d=C // self.num_heads, hh=Hp // self.ws, ww=Wp // self.ws, qkv=3, ws1=self.ws, ws2=self.ws)
 
         dots = (q @ k.transpose(-2,
-                                -1)) * self.scale  #######torch.Size([64, 8]) torch.Size([8, 64]) -> torch.Size([64, 64])
+                                -1)) * self.scale
 
         if self.relative_pos_embedding:
             relative_position_bias = self.relative_position_bias_table[self.relative_position_index.view(-1)].view(
-                self.ws * self.ws, self.ws * self.ws, -1)  # Wh*Ww,Wh*Ww,nH
-            relative_position_bias = relative_position_bias.permute(2, 0, 1).contiguous()  # nH, Wh*Ww, Wh*Ww
-            # print(relative_position_bias.unsqueeze(0).shape)
+                self.ws * self.ws, self.ws * self.ws, -1)
+            relative_position_bias = relative_position_bias.permute(2, 0, 1).contiguous()
             dots += relative_position_bias.unsqueeze(0)
 
         attn = dots.softmax(dim=-1)
-        attn = attn @ v  # torch.Size([64, 64]) torch.Size([64, 8]) -> torch.Size([64, 8])
-        # attn = tpv.view(channel, bs, -1, n)
+        attn = attn @ v
 
         attn = rearrange(attn, '(b hh ww) h (ws1 ws2) d -> b (h d) (hh ws1) (ww ws2)', h=self.num_heads,
                          d=C // self.num_heads, hh=Hp // self.ws, ww=Wp // self.ws, ws1=self.ws, ws2=self.ws)
@@ -432,9 +332,7 @@ class GlobalLocalAttention(nn.Module):
         attn = attn[:, :, :H, :W]
         out = self.attn_x(F.pad(attn, pad=(0, 0, 0, 1), mode='reflect')) + \
               self.attn_y(F.pad(attn, pad=(0, 1, 0, 0), mode='reflect'))
-        '''
-        全局分支
-        '''
+
         out = out + local
 
         out = self.pad_out(out)
@@ -461,12 +359,6 @@ class Block(nn.Module):
         x_clone = x.clone()
         x_comb = self.norm1(x)
 
-        # for cutoff_freq in range(0, 101, 10):
-        #     x = x_clone + self.drop_path(self.attn(x_comb, cutoff_freq))
-        #     x = x + self.drop_path(self.mlp(self.norm2(x)))
-        #
-        #     save_first_layer(x, f'D:/seaice_1024/view/viewer/gabor_cutoff_{cutoff_freq}.jpg')
-
         x = x_clone + self.drop_path(self.attn(x_comb))
         x = x + self.drop_path(self.mlp(self.norm2(x)))
 
@@ -488,11 +380,6 @@ def dwt_init(x):
     return torch.cat((x_LL, x_HL, x_LH, x_HH), 1)
 
 
-'''
-网络之间的连接部分在这
-'''
-
-
 class WF(nn.Module):
     def __init__(self, in_channels=128, decode_channels=128, eps=1e-8):
         super(WF, self).__init__()
@@ -507,18 +394,13 @@ class WF(nn.Module):
         self.dwt = DWT2D(wave='haar')
 
     def forward(self, x, res):
-        '''
-        核心修改部分
-        '''
+
         xup = F.interpolate(x, scale_factor=2, mode='bilinear', align_corners=False)
         res = self.pre_conv(res)
-        dwt = self.dwt(res)  # return: (cA, (cH, cV, cD))要注意返回的值，分别为低频分量，水平高频、垂直高频、对角线高频。高频的值包含在一个tuple中。
+        dwt = self.dwt(res)
         guid = self.pre_conv_dwt(
             torch.cat((dwt[0], dwt[1][0][:, :, 0, :, :], dwt[1][0][:, :, 1, :, :], dwt[1][0][:, :, 2, :, :]), dim=1))
-        x = self.DGF(guid, x, xup)  # 16, 64, 16, 16
-        '''
-        核心修改部分
-        '''
+        x = self.DGF(guid, x, xup)
         weights = nn.ReLU()(self.weights)
         fuse_weights = weights / (torch.sum(weights, dim=0) + self.eps)
         x = fuse_weights[0] * res + fuse_weights[1] * x
@@ -543,11 +425,6 @@ class WF1(nn.Module):
         x = fuse_weights[0] * res + fuse_weights[1] * x
         x = self.post_conv(x)
         return x
-
-
-'''
-网络之间的连接部分在这
-'''
 
 
 class ChannelAttention(nn.Module):
@@ -652,56 +529,29 @@ class FeatureRefinementHead(nn.Module):
         self.pre_conv_dwt = Conv(decode_channels * 4, decode_channels, kernel_size=1)
         self.DGF = ConvGuidedFilter(dim=decode_channels)
 
-        '''
-        改进部分
-        '''
-
         self.CAttention = ChannelAttention(in_channels * 4, decode_channels * 4)
         self.SAttention = SpatialAttention(in_channels * 4, decode_channels * 4)
-        '''
-        改进部分
-        '''
+
 
     def forward(self, x, res):
-        '''
-        这部分还是WF的内容
-        '''
-        '''
-        #########
-        x = F.interpolate(x, scale_factor=2, mode='bilinear', align_corners=False)
-        weights = nn.ReLU()(self.weights)
-        fuse_weights = weights / (torch.sum(weights, dim=0) + self.eps)
-        x = fuse_weights[0] * self.pre_conv(res) + fuse_weights[1] * x
-        #############
-        '''
-        # save_first_layer(x, 'D:/seaice_1024/view/viewer/GLFF.jpg')
 
         xup = F.interpolate(x, scale_factor=2, mode='bilinear', align_corners=False)
 
         res = self.pre_conv(res)
-        dwt = self.dwt(res)  # return: (cA, (cH, cV, cD))要注意返回的值，分别为低频分量，水平高频、垂直高频、对角线高频。高频的值包含在一个tuple中。
+        dwt = self.dwt(res)
         guid = self.pre_conv_dwt(
             torch.cat((dwt[0], dwt[1][0][:, :, 0, :, :], dwt[1][0][:, :, 1, :, :], dwt[1][0][:, :, 2, :, :]), dim=1))
 
-        x = self.DGF(guid, x, xup)  # 16, 64, 16, 16
-
-        # save_first_layer(x, 'D:/seaice_1024/view/viewer/DGD.jpg')
+        x = self.DGF(guid, x, xup)
 
         weights = nn.ReLU()(self.weights)
         fuse_weights = weights / (torch.sum(weights, dim=0) + self.eps)
         x = fuse_weights[0] * res + fuse_weights[1] * x
 
-        x = self.post_conv(x)  # 4,64,256,256
+        x = self.post_conv(x)
         shortcut = self.shortcut(x)
         fusion_result = x
-        '''
-        shortcut = self.shortcut(x)
-        '''
 
-        '''
-        channel_path = self.ca(x) * x
-        spatial_path = self.pa(x) * x
-        '''
         judge = 0
         if x.shape[2] != 256:
             judge = 1
@@ -728,17 +578,8 @@ class FeatureRefinementHead(nn.Module):
         sup = self.proj(sup) + shortcut
         sup = self.act(sup)
 
-        # save_first_layer(sup, 'D:/seaice_1024/view/viewer/DCAH.jpg')
 
         return sup
-
-
-'''
-新模块结束
-新模块结束
-新模块结束
-###################################################################
-'''
 
 
 def save_first_layer(image_tensor, output_image_path):

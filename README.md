@@ -17,4 +17,4 @@ If you find it helpful, you can cite the following paper.
   pages={1-16},
   keywords={Sea ice;Ice;Remote sensing;Optical sensors;Optical imaging;Integrated optics;Image segmentation;Feature extraction;Data mining;Accuracy;Climate change;Deep learning;sea ice recognition;semantic segmentation;Transformer model},
   doi={10.1109/TGRS.2024.3493121}}'
-'''
+

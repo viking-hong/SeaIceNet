@@ -10,7 +10,7 @@ At present, Sentinel-2 sea ice change detection data set has been completed, and
 # Cited
 If you find it helpful, you can cite the following papers.
 
-[Paper1](https://ieeexplore.ieee.org/document/10746542): "SeaIceNet: Sea Ice Recognition via Global-Local Transformer in Optical Remote Sensing Images," IEEE Transactions on Geoscience and Remote Sensing 
+[Paper1](https://ieeexplore.ieee.org/document/10746542)(Priority): "SeaIceNet: Sea Ice Recognition via Global-Local Transformer in Optical Remote Sensing Images," IEEE Transactions on Geoscience and Remote Sensing 
 
 ```bash
 @ARTICLE{10746542,

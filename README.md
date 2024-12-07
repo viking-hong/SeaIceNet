@@ -1,7 +1,9 @@
 # Data
 Due to data confidentiality issues, it will not be disclosed for the time being. 
 
-Since the training weight is over 100M, please contact viking_hazard@163.com if you need it.
+Since the weight size of this work is more than 100M, please contact viking_hazard@163.com if you need it.
+
+At present, Sentinel-2 sea ice change detection data set has been completed, and will be released after the work is completed and published. Please pay attention to it.
 
 # Train
 ```bash

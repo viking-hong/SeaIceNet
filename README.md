@@ -3,6 +3,8 @@ Due to data confidentiality issues, it will not be disclosed for the time being.
 
 Training weights can be contacted at viking_hazard@163.com. 
 
+The model is slightly adjusted on the basis of the original paper, but does not affect the overall structure.
+
 # Cited
 If you find it helpful, you can cite the following paper.
 
